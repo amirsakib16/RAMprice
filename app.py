@@ -91,4 +91,4 @@ def api_brands():
     return jsonify({'brands': BRANDS})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)
