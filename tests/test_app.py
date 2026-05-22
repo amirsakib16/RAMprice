@@ -6,8 +6,6 @@ Run with:  pytest tests/ -v
 """
 
 import json
-import os
-import pickle
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -75,7 +73,7 @@ class TestIndexRoute:
         assert resp.status_code == 200
 
     def test_get_contains_form(self, client):
-        data = resp = client.get("/").data.decode()
+        resp = client.get("/").data.decode()
         assert "capacity_gb" in data or "RAM" in data  # form field present
 
 
@@ -185,7 +183,6 @@ class TestApiPredict:
             content_type="application/json",
         )
         # Flask may return 400 or 200 with error key depending on force=True
-        data = json.loads(resp.data)
         assert resp.status_code in (200, 400)
 
 
