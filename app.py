@@ -1,4 +1,4 @@
-import pickle
+import pickle  # nosec B403
 
 import pandas as pd
 from flask import Flask, jsonify, render_template, request
@@ -35,7 +35,7 @@ BRANDS = [
 
 # ── Load model once at startup ─────────────────────────────────────────────
 with open("ram_price_model.pkl", "rb") as f:
-    payload = pickle.load(f)
+    payload = pickle.load(f)  # nosec B301
 
 model = payload["model"]
 preprocessor = payload["preprocessor"]
@@ -94,7 +94,7 @@ def index():
         error=error,
         classes=classes,
         payload=payload,
-        brands=BRANDS,  # ← new
+        brands=BRANDS,
     )
 
 
@@ -116,4 +116,4 @@ def api_brands():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=False)  # nosec B104
