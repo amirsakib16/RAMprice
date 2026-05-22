@@ -14,7 +14,6 @@ import pytest
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
 
-# Minimal mock payload so the app can be imported without the real .pkl file
 MOCK_CLASSES = ["$0-$30", "$30-$60", "$60-$100", "$100+"]
 
 MOCK_PAYLOAD = {
@@ -43,7 +42,6 @@ def mock_model():
 @pytest.fixture(scope="session")
 def app():
     """Create the Flask test client after mock is in place."""
-    # Ensure we load a fresh import with the mock active
     if "app" in sys.modules:
         del sys.modules["app"]
 
@@ -73,8 +71,9 @@ class TestIndexRoute:
         assert resp.status_code == 200
 
     def test_get_contains_form(self, client):
-        resp = client.get("/").data.decode()
-        assert "capacity_gb" in data or "RAM" in data  # form field present
+        resp = client.get("/")
+        body = resp.data.decode()
+        assert "capacity_gb" in body or "RAM" in body
 
 
 # ── Route: POST / ──────────────────────────────────────────────────────────
@@ -104,7 +103,6 @@ class TestIndexPost:
     def test_post_renders_prediction(self, client):
         resp = client.post("/", data=self.BASE_FORM)
         body = resp.data.decode()
-        # The page should surface one of the class labels
         assert any(c in body for c in MOCK_CLASSES)
 
 
@@ -165,7 +163,7 @@ class TestApiPredict:
         )
         data = json.loads(resp.data)
         total = sum(data["probabilities"].values())
-        assert abs(total - 100.0) < 0.5  # floating-point tolerance
+        assert abs(total - 100.0) < 0.5
 
     def test_missing_fields_still_returns_200(self, client):
         """App has defaults; partial payload should not crash."""
@@ -182,7 +180,6 @@ class TestApiPredict:
             data="not-json",
             content_type="application/json",
         )
-        # Flask may return 400 or 200 with error key depending on force=True
         assert resp.status_code in (200, 400)
 
 
