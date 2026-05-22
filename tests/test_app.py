@@ -68,6 +68,7 @@ def client(app):
 
 # ── Route: GET / ───────────────────────────────────────────────────────────
 
+
 class TestIndexRoute:
     def test_get_returns_200(self, client):
         resp = client.get("/")
@@ -79,6 +80,7 @@ class TestIndexRoute:
 
 
 # ── Route: POST / ──────────────────────────────────────────────────────────
+
 
 class TestIndexPost:
     BASE_FORM = {
@@ -109,6 +111,7 @@ class TestIndexPost:
 
 
 # ── Route: POST /api/predict ───────────────────────────────────────────────
+
 
 class TestApiPredict:
     VALID_PAYLOAD = {
@@ -188,6 +191,7 @@ class TestApiPredict:
 
 # ── Route: GET /api/brands ────────────────────────────────────────────────
 
+
 class TestApiBrands:
     def test_returns_200(self, client):
         resp = client.get("/api/brands")
@@ -208,6 +212,7 @@ class TestApiBrands:
 
 
 # ── Route: 404 ───────────────────────────────────────────────────────────
+
 
 class TestNotFound:
     def test_unknown_route_returns_404(self, client):
