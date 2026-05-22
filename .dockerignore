@@ -1,7 +1,36 @@
-env311/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
-.env
-.git
-.gitignore
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+env311/
+venv/
+.venv/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+tests/
+
+# Dev tools
+.flake8
+pyproject.toml
+pytest.ini
+.bandit
+
+# CI/CD
+.github/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

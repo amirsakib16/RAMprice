@@ -1,0 +1,53 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  pr-checks:
+    name: ✅ PR Quality Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install all dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install flake8 black isort pytest pytest-cov bandit
+
+      - name: Black formatting check
+        run: black --check --diff app.py tests/
+
+      - name: isort import order
+        run: isort --check-only --diff app.py tests/
+
+      - name: Flake8 linting
+        run: flake8 app.py tests/ --max-line-length=100 --exclude=env311
+
+      - name: Bandit security scan
+        run: bandit -r app.py -ll
+
+      - name: Run tests
+        run: pytest tests/ --cov=app --cov-report=term-missing -v
+
+      - name: Docker build check (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: ramprice:pr-${{ github.event.pull_request.number }}

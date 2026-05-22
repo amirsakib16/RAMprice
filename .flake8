@@ -1,0 +1,11 @@
+[flake8]
+max-line-length = 100
+exclude =
+    env311,
+    .git,
+    __pycache__,
+    .github
+# Ignore codes that conflict with Black formatter
+extend-ignore = E203, W503, E501
+per-file-ignores =
+    tests/*:S101   # allow assert in tests

@@ -1,0 +1,282 @@
+name: CI/CD Pipeline — RAMprice
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:   # allow manual trigger
+
+env:
+  PYTHON_VERSION: "3.11"
+  IMAGE_NAME: ramprice
+  REGISTRY: ghcr.io                          # GitHub Container Registry
+  FULL_IMAGE: ghcr.io/${{ github.repository_owner }}/ramprice
+
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ── 1. LINT & CODE QUALITY ────────────────────────────────────────────────
+  lint:
+    name: 🔍 Lint & Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install lint dependencies
+        run: |
+          pip install --upgrade pip
+          pip install flake8 black isort
+
+      - name: Run Black (formatting check)
+        run: black --check --diff app.py tests/
+
+      - name: Run isort (import order check)
+        run: isort --check-only --diff app.py tests/
+
+      - name: Run Flake8 (style + errors)
+        run: |
+          flake8 app.py tests/ \
+            --max-line-length=100 \
+            --exclude=env311 \
+            --count \
+            --statistics
+
+
+  # ── 2. UNIT & INTEGRATION TESTS ──────────────────────────────────────────
+  test:
+    name: 🧪 Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ \
+            --cov=app \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            --tb=short \
+            -v
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7
+
+
+  # ── 3. SECURITY SCAN ─────────────────────────────────────────────────────
+  security:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install Bandit & Safety
+        run: |
+          pip install bandit safety
+
+      - name: Run Bandit (static security analysis)
+        run: |
+          bandit -r app.py -ll --format txt
+
+      - name: Run Safety (dependency vulnerability check)
+        run: |
+          safety check -r requirements.txt
+
+
+  # ── 4. DOCKER BUILD & PUSH ───────────────────────────────────────────────
+  docker-build:
+    name: 🐳 Docker Build & Push
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    # Only push image on pushes to main/develop (not PRs)
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata (tags & labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.FULL_IMAGE }}
+          tags: |
+            # Branch-based tag: main → latest, develop → develop
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
+            # Short commit SHA for traceability
+            type=sha,prefix=sha-,format=short
+            # Semver tags if a Git tag is pushed (e.g. v1.2.3)
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.FULL_IMAGE }}:latest
+          format: table
+          exit-code: 0          # warn-only; set to 1 to block on CRITICAL
+          severity: HIGH,CRITICAL
+
+
+  # ── 5. DEPLOY TO STAGING ─────────────────────────────────────────────────
+  deploy-staging:
+    name: 🚀 Deploy → Staging
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Staging server (SSH)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: ${{ secrets.STAGING_PORT || 22 }}
+          script: |
+            set -e
+            echo "🔄 Pulling latest staging image..."
+            docker pull ${{ env.FULL_IMAGE }}:develop
+
+            echo "🛑 Stopping old container..."
+            docker stop ramprice-staging || true
+            docker rm   ramprice-staging || true
+
+            echo "▶️  Starting new container..."
+            docker run -d \
+              --name ramprice-staging \
+              --restart unless-stopped \
+              -p 5001:5000 \
+              -e FLASK_ENV=staging \
+              ${{ env.FULL_IMAGE }}:develop
+
+            echo "✅ Staging deployed successfully"
+
+      - name: Health check — Staging
+        run: |
+          sleep 10
+          curl --fail --retry 5 --retry-delay 5 \
+            ${{ vars.STAGING_URL }}/api/brands \
+            || (echo "❌ Health check failed" && exit 1)
+
+
+  # ── 6. DEPLOY TO PRODUCTION ──────────────────────────────────────────────
+  deploy-production:
+    name: 🚀 Deploy → Production
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Production server (SSH)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_PORT || 22 }}
+          script: |
+            set -e
+            echo "🔄 Pulling production image..."
+            docker pull ${{ env.FULL_IMAGE }}:latest
+
+            echo "🛑 Stopping old container..."
+            docker stop ramprice-prod || true
+            docker rm   ramprice-prod || true
+
+            echo "▶️  Starting new container..."
+            docker run -d \
+              --name ramprice-prod \
+              --restart unless-stopped \
+              -p 5000:5000 \
+              -e FLASK_ENV=production \
+              ${{ env.FULL_IMAGE }}:latest
+
+            echo "✅ Production deployed successfully"
+
+      - name: Health check — Production
+        run: |
+          sleep 10
+          curl --fail --retry 5 --retry-delay 5 \
+            ${{ vars.PRODUCTION_URL }}/api/brands \
+            || (echo "❌ Health check failed" && exit 1)
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "🎉 Production deployment complete for commit ${{ github.sha }}"
+          # Add Slack/email notification here if desired
