@@ -1,4 +1,4 @@
-import pickle  # nosec B403
+import pickle 
 
 import pandas as pd
 from flask import Flask, jsonify, render_template, request
